@@ -321,6 +321,38 @@
   tr[data-op="tac"] .pip.on { background: var(--tac); border-color: var(--tac); }
   tr[data-op="kill"] .pip.on { background: var(--kill); border-color: var(--kill); }
 
+  .kill-op-warning {
+    background: rgba(192, 57, 43, 0.12);
+    border-left: 3px solid var(--crit);
+    color: var(--bone);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 10px 14px !important;
+  }
+
+  .form-validation-message {
+    background: rgba(192, 57, 43, 0.12);
+    border-left: 3px solid var(--crit);
+    color: var(--bone);
+    font-size: 12px;
+    padding: 12px 14px;
+    margin-top: 16px;
+  }
+  .form-validation-message .fv-title {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .form-validation-message ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+  .form-validation-message li {
+    margin-bottom: 2px;
+  }
+
   .primary-readout {
     font-family: 'JetBrains Mono', monospace;
     font-size: 22px;
@@ -334,6 +366,14 @@
     font-size: 10px;
     color: var(--bone-dim);
     margin-top: 3px;
+  }
+
+  .primary-op-note {
+    font-size: 11px;
+    color: var(--bone-dim);
+    font-style: italic;
+    padding-top: 4px !important;
+    padding-bottom: 10px !important;
   }
 
   tfoot .row-label {
@@ -483,6 +523,12 @@
   </div>
 
   <div class="picker-panel">
+    <div class="date-row">
+      <label>League</label>
+      <select class="date-select" id="leagueSelect" style="max-width: 320px;">
+        <option value="">Select League</option>
+      </select>
+    </div>
     <div class="date-row">
       <label>Game date</label>
       <input type="date" class="date-select" id="gameDate">
@@ -708,25 +754,39 @@
             <div class="pips" id="opp-kill-pips"></div>
           </td>
         </tr>
+        <tr id="killOpWarningRow" style="display:none;">
+          <td></td>
+          <td colspan="2" class="kill-op-warning">
+            ⚠ Be sure to add a point to Kill Op for the player who scored higher.
+          </td>
+        </tr>
         <tr data-op="primary">
           <td class="row-label">Primary Op</td>
           <td>
             <select class="score-select" id="you-basis">
+              <option value="">Select Primary Op</option>
               <option value="crit">Crit Op</option>
               <option value="tac">Tac Op</option>
               <option value="kill">Kill Op</option>
             </select>
-            <div class="primary-readout" id="you-primary-readout">0</div>
-            <div class="primary-formula" id="you-primary-formula">ceil(0 / 2)</div>
+            <div class="primary-readout" id="you-primary-readout">—</div>
+            <div class="primary-formula" id="you-primary-formula">Select a Primary Op basis</div>
           </td>
           <td>
             <select class="score-select" id="opp-basis">
+              <option value="">Select Primary Op</option>
               <option value="crit">Crit Op</option>
               <option value="tac">Tac Op</option>
               <option value="kill">Kill Op</option>
             </select>
-            <div class="primary-readout" id="opp-primary-readout">0</div>
-            <div class="primary-formula" id="opp-primary-formula">ceil(0 / 2)</div>
+            <div class="primary-readout" id="opp-primary-readout">—</div>
+            <div class="primary-formula" id="opp-primary-formula">Select a Primary Op basis</div>
+          </td>
+        </tr>
+        <tr>
+          <td></td>
+          <td colspan="2" class="primary-op-note">
+            Primary Op scoring is based on your selection and is half of that selection rounded up.
           </td>
         </tr>
       </tbody>
@@ -740,6 +800,8 @@
     </table>
   </div>
 
+  <div class="form-validation-message" id="formValidationMessage" style="display:none;"></div>
+
   <div class="footer-note">
     <span class="submit-status" id="submitStatus"></span>
     <div style="display:flex; gap:10px;">
@@ -751,8 +813,27 @@
 </div>
 
 <script>
-  const DEFAULT_ROSTER = ["Ben", "Daniel", "Evan W", "James", "Jennings", "Jonathan", "Mat R", "Matt P", "Michael", "Sam", "Xavier"];
-  let roster = [...DEFAULT_ROSTER];
+  const LEAGUES = {
+    "atomic-empire": {
+      label: "Atomic Empire (Durham)",
+      roster: ["Player 1", "Player 2", "Player 3", "Player 4"]
+    },
+    "dragons-hoard": {
+      label: "Dragon's Hoard (Greensboro)",
+      roster: ["Ben", "Daniel", "Evan W", "James", "Jennings", "Jonathan", "Mat R", "Matt P", "Michael", "Sam", "Xavier"]
+    }
+  };
+
+  let currentLeagueKey = '';
+  let roster = [];
+
+  const leagueSelect = document.getElementById('leagueSelect');
+  Object.entries(LEAGUES).forEach(([key, league]) => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = league.label;
+    leagueSelect.appendChild(opt);
+  });
 
   const DEFAULT_FACTION_GROUPS = {
     "Imperium Factions": [
@@ -895,6 +976,17 @@
     const prevOpp = oppSelect.value;
     youSelect.innerHTML = '';
     oppSelect.innerHTML = '';
+
+    const youBlank = document.createElement('option');
+    youBlank.value = '';
+    youBlank.textContent = currentLeagueKey ? 'Select Your Name' : 'Select a league first';
+    youSelect.appendChild(youBlank);
+
+    const oppBlank = document.createElement('option');
+    oppBlank.value = '';
+    oppBlank.textContent = currentLeagueKey ? "Select Opponent's Name" : 'Select a league first';
+    oppSelect.appendChild(oppBlank);
+
     roster.forEach(name => {
       const o1 = document.createElement('option');
       o1.value = name; o1.textContent = name;
@@ -905,8 +997,18 @@
     });
     if (roster.includes(prevYou)) youSelect.value = prevYou;
     if (roster.includes(prevOpp)) oppSelect.value = prevOpp;
+
+    youSelect.disabled = !currentLeagueKey;
+    oppSelect.disabled = !currentLeagueKey;
+
     updateHeaderNames();
   }
+
+  leagueSelect.addEventListener('change', () => {
+    currentLeagueKey = leagueSelect.value;
+    roster = currentLeagueKey ? [...LEAGUES[currentLeagueKey].roster] : [];
+    renderRosterSelects();
+  });
 
   const youHeaderCell = document.getElementById('youHeaderCell');
   const oppHeaderCell = document.getElementById('oppHeaderCell');
@@ -930,6 +1032,10 @@
   const rosterText = document.getElementById('rosterText');
 
   rosterToggle.addEventListener('click', () => {
+    if (!currentLeagueKey) {
+      alert('Select a league first before editing its roster.');
+      return;
+    }
     rosterEdit.classList.toggle('open');
     if (rosterEdit.classList.contains('open')) {
       rosterText.value = roster.join(', ');
@@ -942,8 +1048,9 @@
   document.getElementById('saveRosterBtn').addEventListener('click', () => {
     const raw = rosterText.value;
     const names = raw.split(/[\n,]/).map(n => n.trim()).filter(n => n.length > 0);
-    if (names.length > 0) {
+    if (names.length > 0 && currentLeagueKey) {
       roster = names;
+      LEAGUES[currentLeagueKey].roster = names;
       renderRosterSelects();
     }
   });
@@ -1019,6 +1126,13 @@
     buildPips(document.getElementById(prefix + '-tac-pips'), tac);
     buildPips(document.getElementById(prefix + '-kill-pips'), kill);
 
+    if (!basis) {
+      document.getElementById(prefix + '-primary-readout').textContent = '—';
+      document.getElementById(prefix + '-primary-formula').textContent = 'Select a Primary Op basis';
+      document.getElementById(prefix + '-total').textContent = crit + tac + kill;
+      return;
+    }
+
     const basisScore = basis === 'crit' ? crit : basis === 'tac' ? tac : kill;
     const basisLabel = basis === 'crit' ? 'Crit' : basis === 'tac' ? 'Tac' : 'Kill';
     const primary = Math.ceil(basisScore / 2);
@@ -1030,9 +1144,18 @@
     document.getElementById(prefix + '-total').textContent = crit + tac + kill + primary;
   }
 
+  function checkKillOpValidation() {
+    const youKill = parseInt(document.getElementById('you-kill').value, 10);
+    const oppKill = parseInt(document.getElementById('opp-kill').value, 10);
+    const warningRow = document.getElementById('killOpWarningRow');
+    const diff = Math.abs(youKill - oppKill);
+    warningRow.style.display = (diff === 1) ? 'table-row' : 'none';
+  }
+
   function recalcAll() {
     recalcSide('you');
     recalcSide('opp');
+    checkKillOpValidation();
   }
 
   ['you', 'opp'].forEach(prefix => {
@@ -1046,7 +1169,7 @@
       ['crit', 'tac', 'kill'].forEach(field => {
         document.getElementById(prefix + '-' + field).value = '0';
       });
-      document.getElementById(prefix + '-basis').value = 'crit';
+      document.getElementById(prefix + '-basis').value = '';
     });
     document.getElementById('youFaction').selectedIndex = 0;
     document.getElementById('oppFaction').selectedIndex = 0;
@@ -1057,6 +1180,8 @@
     updateSpecificMapOptions();
     document.querySelectorAll('.init-cell.selected').forEach(b => b.classList.remove('selected'));
     gameDateInput.valueAsDate = new Date();
+    document.getElementById('formValidationMessage').style.display = 'none';
+    document.getElementById('submitStatus').textContent = '';
     recalcAll();
   });
 
@@ -1076,6 +1201,7 @@
 
   function collectGameData() {
     return {
+      league: LEAGUES[currentLeagueKey] ? LEAGUES[currentLeagueKey].label : '',
       gameDate: gameDateInput.value,
       yourName: youSelect.value,
       opponentName: oppSelect.value,
@@ -1116,8 +1242,64 @@
 
   const submitBtn = document.getElementById('submitBtn');
   const submitStatus = document.getElementById('submitStatus');
+  const formValidationMessage = document.getElementById('formValidationMessage');
+
+  const INITIATIVE_ROW_LABELS = {
+    'pregame-rolloff': 'Pregame — Roll-off winner',
+    'pregame-initiative': 'Pregame — Has initiative',
+    'turn1-rolloff': 'Turn 1 — Roll-off winner',
+    'turn1-initiative': 'Turn 1 — Has initiative',
+    'turn2-rolloff': 'Turn 2 — Roll-off winner',
+    'turn2-initiative': 'Turn 2 — Has initiative',
+    'turn3-rolloff': 'Turn 3 — Roll-off winner',
+    'turn3-initiative': 'Turn 3 — Has initiative',
+    'turn4-rolloff': 'Turn 4 — Roll-off winner',
+    'turn4-initiative': 'Turn 4 — Has initiative'
+  };
+
+  function validateRequiredFields() {
+    const missing = [];
+
+    if (!leagueSelect.value) missing.push('League');
+    if (!gameDateInput.value) missing.push('Game Date');
+    if (!youSelect.value) missing.push('Your Name');
+    if (!oppSelect.value) missing.push("Opponent's Name");
+    if (!document.getElementById('youFaction').value) missing.push('Your Faction');
+    if (!document.getElementById('oppFaction').value) missing.push("Opponent's Faction");
+    if (!document.getElementById('critOpSelect').value) missing.push('Crit Op');
+    if (!gameTypeSelect.value) missing.push('Game Type');
+    if (!specificMapSelect.value) missing.push('Specific Map');
+    if (!document.getElementById('youTacOp').value) missing.push('Your Tac Op');
+    if (!document.getElementById('oppTacOp').value) missing.push("Opponent's Tac Op");
+    if (!document.getElementById('you-basis').value) missing.push('Your Primary Op');
+    if (!document.getElementById('opp-basis').value) missing.push("Opponent's Primary Op");
+
+    Object.keys(INITIATIVE_ROW_LABELS).forEach(rowKey => {
+      if (!getInitiativeWinner(rowKey)) missing.push(INITIATIVE_ROW_LABELS[rowKey]);
+    });
+
+    return missing;
+  }
+
+  function showValidationMessage(missing) {
+    if (missing.length === 0) {
+      formValidationMessage.style.display = 'none';
+      formValidationMessage.innerHTML = '';
+      return;
+    }
+    formValidationMessage.style.display = 'block';
+    formValidationMessage.innerHTML =
+      '<span class="fv-title">Please fill out the following before submitting:</span>' +
+      '<ul>' + missing.map(label => '<li>' + label + '</li>').join('') + '</ul>';
+  }
 
   submitBtn.addEventListener('click', async () => {
+    const missing = validateRequiredFields();
+    showValidationMessage(missing);
+    if (missing.length > 0) {
+      submitStatus.textContent = '';
+      return;
+    }
     if (!GOOGLE_SHEET_WEB_APP_URL || GOOGLE_SHEET_WEB_APP_URL.indexOf('PASTE_YOUR') === 0) {
       submitStatus.textContent = 'Web App URL not set up yet — see instructions.';
       return;
